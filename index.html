@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered ZIP Extractor</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-lock-open"></i>
+                <h1>AI-Powered ZIP Extractor</h1>
+            </div>
+            <p class="tagline">Extract password-protected ZIP files using AI intelligence</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Step 1: File Selection -->
+            <section class="card step-card" id="step1">
+                <div class="step-header">
+                    <span class="step-number">1</span>
+                    <h2>Select ZIP File</h2>
+                </div>
+                <div class="step-content">
+                    <div class="file-input-wrapper">
+                        <input type="file" id="zipFile" accept=".zip" class="file-input">
+                        <label for="zipFile" class="file-label">
+                            <i class="fas fa-file-archive"></i>
+                            <span id="fileName">Choose a ZIP file or drag & drop here</span>
+                        </label>
+                    </div>
+                    <div class="file-info" id="fileInfo" style="display: none;">
+                        <i class="fas fa-check-circle"></i>
+                        <span id="fileDetails"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 2: AI Password Detection -->
+            <section class="card step-card" id="step2">
+                <div class="step-header">
+                    <span class="step-number">2</span>
+                    <h2>AI Password Detection</h2>
+                </div>
+                <div class="step-content">
+                    <!-- Simple Password Input - ALWAYS VISIBLE -->
+                    <div class="simple-password-section">
+                        <label for="zipPassword">
+                            <i class="fas fa-key"></i>
+                            Enter ZIP Password
+                        </label>
+                        <div class="password-input-group">
+                            <input 
+                                type="password" 
+                                id="zipPassword" 
+                                placeholder="Enter your ZIP file password"
+                                class="password-input"
+                            >
+                            <button class="btn-icon" id="toggleZipPassword">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <p class="hint-text">Enter the password you used to protect the ZIP file</p>
+                    </div>
+
+                    <!-- Divider -->
+                    <div style="margin: 24px 0; text-align: center; color: #7F8C8D;">
+                        <span>── OR ──</span>
+                    </div>
+
+                    <!-- AI Detection Option (Optional) -->
+                    <div class="ai-option-toggle">
+                        <label class="checkbox-label" style="justify-content: center;">
+                            <input type="checkbox" id="useAiDetection">
+                            <span>Try AI-powered password detection (experimental)</span>
+                        </label>
+                    </div>
+
+                    <!-- AI Detection Section (Hidden by default) -->
+                    <div class="ai-section" id="aiSection" style="display: none;">
+                        <div class="ai-prompt-area">
+                            <label for="aiPrompt">
+                                <i class="fas fa-brain"></i>
+                                Describe how to find the password (optional)
+                            </label>
+                            <textarea 
+                                id="aiPrompt" 
+                                placeholder="Example: 'The password is my birthday in MMDDYYYY format' or 'Check the attached readme.txt file'"
+                                rows="3"
+                            ></textarea>
+                            <button class="btn btn-primary" id="aiDetectBtn">
+                                <i class="fas fa-magic"></i>
+                                Let AI Find Password
+                            </button>
+                        </div>
+                        
+                        <!-- AI Processing Indicator -->
+                        <div class="ai-processing" id="aiProcessing" style="display: none;">
+                            <div class="processing-animation">
+                                <div class="brain-icon">
+                                    <i class="fas fa-brain fa-pulse"></i>
+                                </div>
+                                <div class="processing-text">
+                                    <h3>AI is analyzing...</h3>
+                                    <p id="aiStatus">Initializing password detection</p>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="progressFill"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AI Results -->
+                        <div class="ai-results" id="aiResults" style="display: none;">
+                            <div class="result-header">
+                                <i class="fas fa-check-circle success-icon"></i>
+                                <h3>Password Found!</h3>
+                            </div>
+                            <div class="password-display">
+                                <input type="text" id="detectedPassword" readonly>
+                                <button class="btn-icon" id="copyPassword" title="Copy password">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button class="btn-icon" id="togglePassword" title="Show/Hide password">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                            <div class="confidence-score">
+                                <span>Confidence:</span>
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" id="confidenceFill"></div>
+                                </div>
+                                <span id="confidencePercent">95%</span>
+                            </div>
+                            <button class="btn btn-secondary" id="useAiPassword" style="margin-top: 12px;">
+                                <i class="fas fa-check"></i>
+                                Use This Password
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 3: Extraction Options -->
+            <section class="card step-card" id="step3">
+                <div class="step-header">
+                    <span class="step-number">3</span>
+                    <h2>Extraction Options</h2>
+                </div>
+                <div class="step-content">
+                    <div class="option-group">
+                        <label>
+                            <i class="fas fa-folder"></i>
+                            Extract to:
+                        </label>
+                        <div class="radio-group">
+                            <div class="radio-option">
+                                <input type="radio" id="sameFolder" name="extractLocation" value="same" checked>
+                                <label for="sameFolder">Same folder as ZIP file</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" id="newFolder" name="extractLocation" value="new">
+                                <label for="newFolder">New folder (same name as ZIP)</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" id="customFolder" name="extractLocation" value="custom">
+                                <label for="customFolder">Custom location</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="custom-path" id="customPath" style="display: none;">
+                        <label for="customPathInput">Custom extraction path:</label>
+                        <div class="path-input-group">
+                            <input 
+                                type="text" 
+                                id="customPathInput" 
+                                placeholder="C:\Users\YourName\Documents\Extracted"
+                                class="path-input"
+                            >
+                            <button class="btn btn-secondary" id="browsePath">
+                                <i class="fas fa-folder-open"></i>
+                                Browse
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="option-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="overwriteFiles">
+                            <span>Overwrite existing files</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="preserveStructure" checked>
+                            <span>Preserve folder structure</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Extract Button -->
+            <div class="action-section">
+                <button class="btn btn-success btn-large" id="extractBtn" disabled>
+                    <i class="fas fa-download"></i>
+                    Extract Files
+                </button>
+            </div>
+
+            <!-- Extraction Progress -->
+            <section class="card progress-card" id="progressCard" style="display: none;">
+                <div class="extraction-progress">
+                    <h3>Extracting Files...</h3>
+                    <div class="progress-details">
+                        <div class="progress-bar-large">
+                            <div class="progress-fill-large" id="extractProgress"></div>
+                        </div>
+                        <div class="progress-stats">
+                            <span id="currentFile">Preparing extraction...</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                    </div>
+                    <div class="file-list" id="fileList"></div>
+                </div>
+            </section>
+
+            <!-- Success Message -->
+            <section class="card success-card" id="successCard" style="display: none;">
+                <div class="success-content">
+                    <i class="fas fa-check-circle success-icon-large"></i>
+                    <h2>Extraction Complete!</h2>
+                    <p id="successMessage">All files have been successfully extracted.</p>
+                    <div class="success-stats">
+                        <div class="stat">
+                            <i class="fas fa-file"></i>
+                            <span id="filesExtracted">0</span>
+                            <small>Files Extracted</small>
+                        </div>
+                        <div class="stat">
+                            <i class="fas fa-folder"></i>
+                            <span id="foldersCreated">0</span>
+                            <small>Folders Created</small>
+                        </div>
+                        <div class="stat">
+                            <i class="fas fa-hdd"></i>
+                            <span id="totalSize">0 MB</span>
+                            <small>Total Size</small>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="openLocation">
+                        <i class="fas fa-folder-open"></i>
+                        Open Extraction Folder
+                    </button>
+                    <button class="btn btn-secondary" id="extractAnother">
+                        <i class="fas fa-redo"></i>
+                        Extract Another File
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <p>
+                    <i class="fas fa-code"></i>
+                    Built with AI-powered technology | 
+                    <a href="https://github.com/yourusername/ai-zip-extractor" target="_blank">
+                        <i class="fab fa-github"></i> View on GitHub
+                    </a>
+                </p>
+                <p class="tech-stack">
+                    <span>Tech Stack:</span>
+                    <span class="tech-badge">JavaScript</span>
+                    <span class="tech-badge">JSZip</span>
+                    <span class="tech-badge">AI Integration</span>
+                    <span class="tech-badge">HTML5</span>
+                    <span class="tech-badge">CSS3</span>
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- zip.js for password-protected ZIP support -->
+    <script src="https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.6.0/dist/zip.min.js"></script>
+    <!-- FileSaver.js for actual file downloads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
