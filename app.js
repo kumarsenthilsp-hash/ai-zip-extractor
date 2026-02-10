@@ -7,7 +7,7 @@
 // Application State
 // ========================================
 const AppState = {
-    selectedFile: null,
+    selectedFiles: [],
     detectedPassword: null,
     extractionPath: null,
     isProcessing: false,
@@ -42,6 +42,8 @@ const DOM = {
     // Main password input
     zipPassword: document.getElementById('zipPassword'),
     toggleZipPassword: document.getElementById('toggleZipPassword'),
+    applyToChecked: document.getElementById('applyToChecked'),
+    selectedFilesList: document.getElementById('selectedFilesList'),
     
     aiSection: document.getElementById('aiSection'),
     manualSection: document.getElementById('manualSection'),
@@ -124,6 +126,38 @@ function initializeEventListeners() {
     
     // AI Detection
     DOM.aiDetectBtn.addEventListener('click', handleAIDetection);
+
+    // Apply-to-checked checkbox
+    DOM.applyToChecked?.addEventListener('change', (e) => {
+        const apply = e.target.checked;
+        // If applying, copy main password into all checked per-file inputs
+        if (apply && AppState.selectedFiles && AppState.selectedFiles.length) {
+            const pw = DOM.zipPassword.value || '';
+            AppState.perFilePasswords = AppState.perFilePasswords || AppState.selectedFiles.map(() => '');
+            AppState.selectedFilesEnabled = AppState.selectedFilesEnabled || AppState.selectedFiles.map(() => true);
+            AppState.selectedFiles.forEach((f, idx) => {
+                if (AppState.selectedFilesEnabled[idx]) {
+                    AppState.perFilePasswords[idx] = pw;
+                }
+            });
+            // re-render to update inputs
+            renderSelectedFilesList(AppState.selectedFiles);
+        }
+    });
+
+    // Main password change should update per-file inputs when applyToChecked is enabled
+    DOM.zipPassword?.addEventListener('input', (e) => {
+        if (DOM.applyToChecked && DOM.applyToChecked.checked && AppState.selectedFiles) {
+            const pw = e.target.value || '';
+            AppState.perFilePasswords = AppState.perFilePasswords || AppState.selectedFiles.map(() => '');
+            AppState.selectedFiles.forEach((f, idx) => {
+                if (AppState.selectedFilesEnabled?.[idx]) {
+                    AppState.perFilePasswords[idx] = pw;
+                }
+            });
+            renderSelectedFilesList(AppState.selectedFiles);
+        }
+    });
     
     // Password visibility toggles
     document.getElementById('togglePassword')?.addEventListener('click', togglePasswordVisibility);
@@ -155,24 +189,96 @@ function initializeEventListeners() {
 // File Handling
 // ========================================
 function handleFileSelect() {
-    const file = DOM.zipFile.files[0];
-    
-    if (!file) return;
-    
-    if (!file.name.endsWith('.zip')) {
-        showToast('Please select a ZIP file', 'error');
+    const files = Array.from(DOM.zipFile.files || []);
+
+    if (!files.length) return;
+
+    // Filter only .zip files
+    const zipFiles = files.filter(f => f.name && f.name.toLowerCase().endsWith('.zip'));
+    if (!zipFiles.length) {
+        showToast('Please select one or more ZIP files', 'error');
         return;
     }
-    
-    AppState.selectedFile = file;
-    
-    // Update UI
-    DOM.fileName.textContent = file.name;
+
+    AppState.selectedFiles = zipFiles;
+    AppState.selectedFilesEnabled = zipFiles.map(() => true);
+    AppState.perFilePasswords = zipFiles.map(() => '');
+
+    // Update UI: show count and first file name
+    if (zipFiles.length === 1) {
+        const file = zipFiles[0];
+        DOM.fileName.textContent = file.name;
+        DOM.fileDetails.textContent = `${file.name} (${formatFileSize(file.size)})`;
+    } else {
+        DOM.fileName.textContent = `${zipFiles.length} ZIP files selected`;
+        DOM.fileDetails.textContent = zipFiles.map(f => f.name).slice(0,5).join(', ') + (zipFiles.length > 5 ? '...' : '');
+    }
+
     DOM.fileInfo.style.display = 'flex';
-    DOM.fileDetails.textContent = `${file.name} (${formatFileSize(file.size)})`;
-    
+    // Render per-archive selection list
+    renderSelectedFilesList(zipFiles);
     validateExtractButton();
-    showToast('ZIP file selected successfully', 'success');
+    showToast(`${zipFiles.length} ZIP file(s) selected`, 'success');
+}
+
+function renderSelectedFilesList(files) {
+    const container = DOM.selectedFilesList;
+    container.innerHTML = '';
+    if (!files || files.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'block';
+
+    files.forEach((f, idx) => {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '8px';
+        row.style.marginBottom = '6px';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = !!AppState.selectedFilesEnabled?.[idx];
+        checkbox.dataset.index = idx;
+
+        const label = document.createElement('span');
+        label.textContent = f.name;
+        label.style.flex = '1';
+        label.style.overflow = 'hidden';
+        label.style.textOverflow = 'ellipsis';
+        label.style.whiteSpace = 'nowrap';
+
+        const pwInput = document.createElement('input');
+        pwInput.type = 'password';
+        pwInput.placeholder = 'Per-file password (optional)';
+        pwInput.style.width = '220px';
+        pwInput.dataset.index = idx;
+        pwInput.value = AppState.perFilePasswords?.[idx] || '';
+        pwInput.disabled = !checkbox.checked;
+
+        // events
+        checkbox.addEventListener('change', (e) => {
+            const i = Number(e.target.dataset.index);
+            AppState.selectedFilesEnabled[i] = e.target.checked;
+            pwInput.disabled = !e.target.checked;
+            if (DOM.applyToChecked.checked && e.target.checked) {
+                // populate with main password if available
+                pwInput.value = DOM.zipPassword.value || '';
+                AppState.perFilePasswords[i] = pwInput.value;
+            }
+        });
+
+        pwInput.addEventListener('input', (e) => {
+            const i = Number(e.target.dataset.index);
+            AppState.perFilePasswords[i] = e.target.value;
+        });
+
+        row.appendChild(checkbox);
+        row.appendChild(label);
+        row.appendChild(pwInput);
+        container.appendChild(row);
+    });
 }
 
 // ========================================
@@ -196,7 +302,7 @@ function handlePasswordMethodChange(e) {
 // AI Password Detection
 // ========================================
 async function handleAIDetection() {
-    if (!AppState.selectedFile) {
+    if (!AppState.selectedFiles || AppState.selectedFiles.length === 0) {
         showToast('Please select a ZIP file first', 'warning');
         return;
     }
@@ -216,11 +322,19 @@ async function handleAIDetection() {
         
         await updateAIStatus('Applying AI intelligence...', 60);
         
-        // Get user hint if provided
-        const userHint = DOM.aiPrompt.value.trim();
+            if (!AppState.selectedFiles || AppState.selectedFiles.length === 0) {
+                showToast('Please select a ZIP file first', 'warning');
+                return;
+            }
         
-        // Call AI API or use intelligent pattern matching
-        const password = await detectPasswordWithAI(AppState.selectedFile, userHint);
+            // Get user hint if provided
+            const userHint = DOM.aiPrompt.value.trim();
+        
+            // Use the first selected file as the target for AI detection
+            const targetFile = AppState.selectedFiles[0];
+        
+            // Call AI API or use intelligent pattern matching
+            const password = await detectPasswordWithAI(targetFile, userHint);
         
         await updateAIStatus('Password found!', 100);
         await sleep(500);
@@ -265,18 +379,37 @@ async function detectPasswordWithAI(file, userHint) {
 }
 
 async function callGeminiAPI(file, userHint) {
-    const prompt = `You are an AI assistant helping to recover a password for a ZIP file.
+    const prompt = `You are an expert password security architect. Generate STRONG, UNIQUE, MEMORABLE passwords from user hints.
+
+File: ${file.name}
+Hint: "${userHint || 'No hint provided'}"
+
+CRITICAL PASSWORD REQUIREMENTS (ALL must be satisfied):
+✓ Length between 12 and 18 characters (inclusive)
+✓ Contains UPPERCASE letters (A-Z)
+✓ Contains lowercase letters (a-z)
+✓ Contains NUMBERS (0-9)
+✓ Contains at least TWO SPECIAL SYMBOLS (!@#$%^&*-_+=)
+✓ Avoid exact dictionary words like "password", "admin"
+✓ Avoid simple sequential numbers or predictable patterns
+✓ Not based on the filename
+
+PASSWORD GUIDELINES:
+
+EXAMPLES (all within 12-18 chars):
+
+ALGORITHM (for your reference):
+1. Extract 2 key words or names from the hint
+2. Capitalize first letter of primary word
+3. Insert 2 different symbols in the middle/end
+4. Include a 2- or 4-digit year/number if space allows
+5. Ensure final length is between 12 and 18
+
+Return EXACTLY 5 password candidates, one per line, each satisfying ALL requirements (12-18 chars, mixed case, numbers, ≥2 symbols). No explanations.`;
+
+
+
     
-File name: ${file.name}
-${userHint ? `User hint: ${userHint}` : ''}
-
-Based on the file name and hint, suggest the most likely password. Common patterns include:
-- Dates (MMDDYYYY, YYYYMMDD, etc.)
-- File name or related words
-- Common passwords
-- Combinations of the above
-
-Respond with ONLY the password, nothing else.`;
 
     try {
         const response = await fetch(`${Config.aiApiUrl}?key=${Config.aiApiKey}`, {
@@ -295,9 +428,19 @@ Respond with ONLY the password, nothing else.`;
 
         const data = await response.json();
         const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        
+
         if (aiResponse) {
-            return aiResponse.trim();
+            // Parse lines - filter out examples, explanations, and weak candidates
+            const lines = aiResponse.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('Example') && !l.includes('Hint'));
+            for (const line of lines) {
+                const v = line.replace(/^-\s*/,'').trim();  // remove bullet points if any
+                if (!v || v.toLowerCase().length < 2) continue;
+                if (v.toLowerCase() === file.name.toLowerCase().replace(/\.zip$/i, '')) continue;
+                if (v.length < 6) continue;  // Ensure reasonable length
+                return v;
+            }
+            // Fallback: return first suitable line
+            return (lines[0] || '').replace(/^-\s*/,'').trim() || null;
         }
     } catch (error) {
         console.error('Gemini API call failed:', error);
@@ -307,56 +450,171 @@ Respond with ONLY the password, nothing else.`;
 }
 
 function intelligentPasswordDetection(file, userHint) {
-    // Extract potential passwords from file name and hint
-    const fileName = file.name.replace('.zip', '');
+    // Strong password generation with symbol mixing
+    const fileName = file.name.replace(/\.zip$/i, '');
+    const symbols = ['!', '@', '#', '$', '%', '^', '&', '*', '-', '_', '+', '='];
+    const currentYear = new Date().getFullYear();
+    
+    function capitalize(str) {
+        return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+    }
+
+    function getRandomSymbol() {
+        return symbols[Math.floor(Math.random() * symbols.length)];
+    }
+
+    function getRandomNumber() {
+        return Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    }
+
+    function isStrongPassword(pwd) {
+        // Must have ALL of these and be within 12-18 chars
+        const hasUpper = /[A-Z]/.test(pwd);
+        const hasLower = /[a-z]/.test(pwd);
+        const hasNumber = /[0-9]/.test(pwd);
+        const hasSymbol = /[!@#$%^&*\-_+=]/.test(pwd);
+        const isLongEnough = pwd.length >= 12;
+        const isNotTooLong = pwd.length <= 18;
+        const hasMultipleSymbols = (pwd.match(/[!@#$%^&*\-_+=]/g) || []).length >= 2;
+
+        return hasUpper && hasLower && hasNumber && hasSymbol && isLongEnough && isNotTooLong && hasMultipleSymbols;
+    }
+
     const candidates = [];
-    
-    // Add file name variations
-    candidates.push(fileName);
-    candidates.push(fileName.toLowerCase());
-    candidates.push(fileName.toUpperCase());
-    
-    // Extract dates from file name (YYYYMMDD, MMDDYYYY, etc.)
-    const datePatterns = [
-        /(\d{8})/g,
-        /(\d{4}-\d{2}-\d{2})/g,
-        /(\d{2}-\d{2}-\d{4})/g
-    ];
-    
-    datePatterns.forEach(pattern => {
-        const matches = fileName.match(pattern);
-        if (matches) {
-            candidates.push(...matches.map(m => m.replace(/-/g, '')));
-        }
-    });
-    
-    // Parse user hint
-    if (userHint) {
-        // Extract potential dates from hint
-        const hintDates = userHint.match(/\d+/g);
-        if (hintDates) {
-            candidates.push(...hintDates);
-        }
+
+    if (userHint && userHint.trim().length > 0) {
+        // Extract key words (3+ chars)
+        const words = userHint.toLowerCase().match(/[a-z]+/gi) || [];
+        const longWords = words.filter(w => w.length > 2 && w.length < 20).slice(0, 6);
         
-        // Extract words
-        const words = userHint.toLowerCase().split(/\s+/);
-        candidates.push(...words);
-        
-        // Common variations
-        if (userHint.toLowerCase().includes('birthday')) {
-            const today = new Date();
-            candidates.push(
-                `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}${today.getFullYear()}`,
-                `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
-            );
+        // Extract numbers from hint
+        const numbers = (userHint.match(/\d+/g) || []);
+        const hintYear = numbers.find(n => n.length === 4 && parseInt(n) >= 1900 && parseInt(n) <= 2100);
+        const hintNumbers = numbers.filter(n => n.length < 4);
+
+        if (longWords.length >= 1) {
+            const w1 = capitalize(longWords[0]);
+            const w2 = longWords[1] ? capitalize(longWords[1]) : '';
+            const w3 = longWords[2] ? capitalize(longWords[2]) : '';
+            const w4 = longWords[3] ? capitalize(longWords[3]) : '';
+
+            // Use hint year or generate random
+            const yearsToUse = hintYear ? [hintYear] : [currentYear, 2024, 2020, 2016, 2012];
+            
+            // STRONG FORMULA 1: Word@Symbol#Number!Word$
+            for (const year of yearsToUse) {
+                const sym1 = getRandomSymbol();
+                const sym2 = getRandomSymbol();
+                const num = hintNumbers[0] || getRandomNumber();
+                
+                // Pattern: Uppercase@lowercase#Year!Uppercase$
+                candidates.push(`${w1}${sym1}${w2}#${year}${sym2}`);  // Word1@Word2#2024!
+                candidates.push(`${w1}${sym1}${num}${sym2}${w2}${getRandomSymbol()}`);  // Word1@1234!Word2#
+                candidates.push(`${sym1}${w1}${sym2}${year}${getRandomSymbol()}${w2}`);  // @Word1#2024!Word2
+                
+                // Pattern: Mixed case with symbols
+                const mixed = `${w1.charAt(0)}${w1.slice(1).toLowerCase()}${sym1}${w2.charAt(0)}${w2.slice(1).toLowerCase()}${sym2}${year}${getRandomSymbol()}`;
+                candidates.push(mixed);  // S@wI#2024!
+            }
+
+            // STRONG FORMULA 2: Word1UPPERCASE@Number!Word2$
+            if (w2) {
+                const upperW2 = w2.toUpperCase();
+                for (const year of yearsToUse) {
+                    const sym1 = getRandomSymbol();
+                    const sym2 = getRandomSymbol();
+                    
+                    candidates.push(`${w1}${sym1}${upperW2}#${year.toString().slice(0, 2)}${sym2}${year.toString().slice(2)}`);
+                    candidates.push(`${w1.charAt(0).toUpperCase()}${w1.slice(1)}${sym1}${w2}${sym2}${year}!`);
+                }
+            }
+
+            // STRONG FORMULA 3: Three-word combo
+            if (w3) {
+                for (const year of yearsToUse) {
+                    const sym = getRandomSymbol();
+                    candidates.push(`${w1}${sym}${w2}${getRandomSymbol()}${w3}#${year}!`);
+                }
+            }
+
+            // STRONG FORMULA 4: With number multiplication
+            if (hintNumbers.length > 0) {
+                const num1 = hintNumbers[0];
+                const num2 = hintNumbers[1] || (parseInt(hintNumbers[0]) + Math.floor(Math.random() * 100));
+                
+                candidates.push(`${w1}${getRandomSymbol()}${num1}${getRandomSymbol()}${w2}${getRandomSymbol()}${num2}!`);
+                candidates.push(`${w1}${num1}${getRandomSymbol()}${w2}${num2}${getRandomSymbol()}${num1}`);
+            }
+        }
+
+        // Single word - make it strong
+        if (longWords.length === 1) {
+            const base = capitalize(longWords[0]);
+            for (const year of [currentYear, 2024, 2020]) {
+                candidates.push(`${base}${getRandomSymbol()}${year}${getRandomSymbol()}${getRandomNumber().slice(0, 2)}!`);
+                candidates.push(`${getRandomSymbol()}${base}${getRandomSymbol()}${year}!`);
+            }
         }
     }
+
+    // Generic strong patterns (fallback)
+    candidates.push(`Secure${currentYear}${getRandomSymbol()}Pass!`);
+    candidates.push(`Strong${getRandomSymbol()}${currentYear}${getRandomSymbol()}Pwd!`);
+    candidates.push(`Password${getRandomSymbol()}${getRandomNumber()}${getRandomSymbol()}`);
+
+    // Validate - only keep STRONG passwords
+    const seen = new Set();
+    const result = [];
     
-    // Add common passwords
-    candidates.push(...Config.commonPatterns);
-    
-    // Return the first candidate (or use the most likely one)
-    return candidates[0] || 'password123';
+    for (const c of candidates) {
+        const v = (c || '').toString().trim();
+        if (!v || v.length < 12) continue;
+        if (v.toLowerCase() === fileName.toLowerCase()) continue;
+        if (seen.has(v.toLowerCase())) continue;
+        
+        // STRICT validation: must have ALL requirements
+        if (isStrongPassword(v)) {
+            seen.add(v.toLowerCase());
+            result.push(v);
+        }
+    }
+
+    // If no valid candidate, generate a guaranteed strong one within bounds
+    if (result.length === 0) {
+        const w1 = (userHint && userHint.match(/[a-z]{3,}/i)) ? capitalize(userHint.match(/[a-z]{3,}/i)[0]) : 'User';
+        const w2Match = (userHint && userHint.match(/[a-z]{3,}/ig) || [])[1];
+        const w2 = w2Match ? capitalize(w2Match) : '';
+
+        function generateBoundedStrong(a, b) {
+            const sym1 = getRandomSymbol();
+            const sym2 = getRandomSymbol();
+            const sym3 = getRandomSymbol();
+            const year2 = (hintYear || currentYear.toString()).toString().slice(-2);
+            const rand2 = getRandomNumber().slice(0,2);
+
+            let core = `${a}${sym1}${year2}${sym2}${rand2}${sym3}`;
+            if (core.length < 12) {
+                if (b) core = `${a}${b.charAt(0).toUpperCase()}${sym1}${year2}${sym2}${rand2}${sym3}`;
+                else core = `${a}${a.slice(0,2)}${sym1}${year2}${sym2}${rand2}${sym3}`;
+            }
+            if (core.length > 18) core = core.slice(0,18);
+            if (!isStrongPassword(core)) {
+                // attempt to fix by inserting extra symbol/number until valid (but keep <=18)
+                let attempt = core;
+                while (!isStrongPassword(attempt) && attempt.length < 18) {
+                    attempt = attempt + getRandomSymbol() + Math.floor(Math.random()*10);
+                }
+                if (attempt.length > 18) attempt = attempt.slice(0,18);
+                return attempt;
+            }
+            return core;
+        }
+
+        const fallback = generateBoundedStrong(w1, w2);
+        return fallback;
+    }
+
+    return result[0] || `SecurePass${currentYear}`;
 }
 
 async function updateAIStatus(message, progress) {
@@ -376,153 +634,171 @@ function handleExtractionLocationChange(e) {
 // ZIP Extraction
 // ========================================
 async function handleExtraction() {
-    if (!AppState.selectedFile) {
-        showToast('Please select a ZIP file', 'warning');
+    if (!AppState.selectedFiles || AppState.selectedFiles.length === 0) {
+        showToast('Please select one or more ZIP files', 'warning');
         return;
     }
-    
+
     // Get password from the main password input field
     const password = DOM.zipPassword?.value?.trim();
-    
+
     if (!password) {
         showToast('Please enter a password', 'warning');
         return;
     }
-    
+
     // Show progress
     DOM.progressCard.style.display = 'block';
     DOM.extractBtn.disabled = true;
     AppState.isProcessing = true;
-    
+
     try {
-        await extractZipFile(AppState.selectedFile, password);
+        const allExtracted = [];
+        const allSkipped = [];
+
+        // Extract each selected ZIP sequentially
+        for (let i = 0; i < AppState.selectedFiles.length; i++) {
+            const zipFile = AppState.selectedFiles[i];
+            DOM.currentFile.textContent = `Processing archive: ${zipFile.name}`;
+            console.log(`Processing archive (${i+1}/${AppState.selectedFiles.length}):`, zipFile.name);
+
+            try {
+                // determine password to use for this archive: per-file override > main password
+                const perFilePw = (AppState.perFilePasswords && AppState.perFilePasswords[i]) ? AppState.perFilePasswords[i] : '';
+                const pwToUse = perFilePw || password;
+                await extractZipFile(zipFile, pwToUse);
+                allExtracted.push(zipFile.name);
+            } catch (err) {
+                console.error(`Failed to extract archive ${zipFile.name}:`, err);
+                allSkipped.push({ name: zipFile.name, reason: (err && err.message) ? err.message : 'Unknown' });
+            }
+        }
+
+        // Summary
+        console.log('Batch extraction summary:', { extracted: allExtracted, skipped: allSkipped });
+        let summaryMessage = `Finished: ${allExtracted.length} archives processed successfully.`;
+        if (allSkipped.length) summaryMessage += ` Skipped ${allSkipped.length} archive(s).`;
+        showToast(summaryMessage, 'success');
+
     } catch (error) {
         console.error('Extraction error:', error);
-        
-        // Provide more specific error messages
-        let errorMessage = 'Extraction failed. ';
-        if (error.message.includes('Incorrect password')) {
-            errorMessage = '❌ Incorrect password - Please verify and try again';
-        } else if (error.message.includes('password')) {
-            errorMessage = '❌ Password validation failed - Check your password';
-        } else if (error.message.includes('encrypted')) {
-            errorMessage = '❌ File is encrypted - password may be wrong or unsupported encryption';
-        } else {
-            errorMessage += error.message || 'Please check the password.';
-        }
-        
-        showToast(errorMessage, 'error');
-        DOM.progressCard.style.display = 'none';
+        showToast('Extraction failed. Please check the password or file integrity.', 'error');
     } finally {
         DOM.extractBtn.disabled = false;
         AppState.isProcessing = false;
+        DOM.progressCard.style.display = 'none';
     }
 }
 
 async function extractZipFile(file, password) {
     // Initialize zip.js
     const { BlobReader, ZipReader, Uint8ArrayWriter } = window.zip;
-    
+
     try {
         DOM.currentFile.textContent = 'Loading ZIP file...';
         DOM.extractProgress.style.width = '10%';
         DOM.progressPercent.textContent = '10%';
-        
+
         // Create ZIP reader
         const blobReader = new BlobReader(file);
         const zipReader = new ZipReader(blobReader);
-        
+
         // Get all entries
         const entries = await zipReader.getEntries();
         console.log(`✓ ZIP file loaded with ${entries.length} entries`);
-        
-        // Validate password by testing first file
-        const passwordValid = await validatePasswordWithZipJs(entries, password);
-        if (!passwordValid) {
-            throw new Error('Incorrect password - The password does not match this ZIP file');
-        }
-        
-        // Count files and folders
-        let extractedCount = 0;
+
+        // Prepare logs
+        const extractedFiles = [];
+        const skippedFiles = [];
         let foldersCount = 0;
         let totalSize = 0;
-        const folderStructure = {}; // Track folder creation
-        
+
         DOM.fileList.innerHTML = '';
-        
-        // Extract each entry
+
+        // Extract each entry individually using the provided password
         for (let i = 0; i < entries.length; i++) {
             const entry = entries[i];
-            
+
             // Update progress
             const progress = 10 + (i / entries.length * 80);
             DOM.extractProgress.style.width = progress + '%';
             DOM.progressPercent.textContent = Math.round(progress) + '%';
-            DOM.currentFile.textContent = `Extracting: ${entry.filename}`;
-            
-            // Add to file list
+            DOM.currentFile.textContent = `Processing: ${entry.filename}`;
+
+            // Prepare UI item
             const fileItem = document.createElement('div');
-            fileItem.textContent = `✓ ${entry.filename}`;
-            fileItem.style.color = '#7ED321';
             fileItem.style.fontSize = '0.85rem';
             fileItem.style.marginBottom = '4px';
-            DOM.fileList.appendChild(fileItem);
-            
+
             if (entry.directory) {
                 foldersCount++;
-                folderStructure[entry.filename] = true;
-            } else {
-                try {
-                    // Create writer and extract
-                    const writer = new Uint8ArrayWriter();
-                    
-                    // Extract with password
-                    await entry.getData(writer, { password });
-                    
-                    const data = writer.getData();
-                    totalSize += data.length;
-                    
-                    // Convert to Blob and download the file
-                    const blob = new Blob([data], { type: 'application/octet-stream' });
-                    
-                    // Save file using FileSaver
-                    // The file will be saved to the user's Downloads folder
-                    saveAs(blob, entry.filename);
-                    
-                    extractedCount++;
-                    
-                    // Simulate download time
-                    await sleep(50);
-                    
-                } catch (error) {
-                    console.error(`Failed to extract ${entry.filename}:`, error);
-                    // Continue with other files
-                }
+                fileItem.textContent = `📁 ${entry.filename}`;
+                fileItem.style.color = '#4A90E2';
+                DOM.fileList.appendChild(fileItem);
+                continue;
+            }
+
+            try {
+                const writer = new Uint8ArrayWriter();
+
+                // Attempt extraction with the user-provided password
+                await entry.getData(writer, { password });
+
+                const data = writer.getData();
+                totalSize += data.length;
+
+                // Save the file (downloads to user's Downloads folder)
+                const blob = new Blob([data], { type: 'application/octet-stream' });
+                saveAs(blob, entry.filename);
+
+                extractedFiles.push(entry.filename);
+
+                fileItem.textContent = `✓ Extracted: ${entry.filename}`;
+                fileItem.style.color = '#27AE60';
+                DOM.fileList.appendChild(fileItem);
+
+                // small pause to allow downloads to start
+                await sleep(50);
+            } catch (error) {
+                // Extraction failed for this file (likely wrong password for that entry)
+                skippedFiles.push({ name: entry.filename, reason: (error && error.message) ? error.message : 'Unknown' });
+
+                fileItem.textContent = `✗ Skipped: ${entry.filename}`;
+                fileItem.style.color = '#E74C3C';
+                DOM.fileList.appendChild(fileItem);
+
+                console.warn(`Skipped ${entry.filename}:`, error);
+                // continue with next entry
             }
         }
-        
+
         // Close ZIP reader
         await zipReader.close();
-        
+
         // Complete
         DOM.extractProgress.style.width = '100%';
         DOM.progressPercent.textContent = '100%';
         DOM.currentFile.textContent = 'Extraction complete!';
-        
+
         await sleep(500);
-        
-        // Show success
+
+        // Show summary
         DOM.progressCard.style.display = 'none';
         DOM.successCard.style.display = 'block';
-        
-        DOM.filesExtracted.textContent = extractedCount;
+
+        DOM.filesExtracted.textContent = extractedFiles.length;
         DOM.foldersCreated.textContent = foldersCount;
         DOM.totalSize.textContent = formatFileSize(totalSize);
-        DOM.successMessage.textContent = `All files have been saved to your Downloads folder. Total: ${extractedCount} files extracted.`;
-        
-        console.log(`✓ Successfully extracted ${extractedCount} files to Downloads folder`);
-        showToast(`✓ Extracted ${extractedCount} files to Downloads folder!`, 'success');
-        
+
+        DOM.successMessage.textContent = `Extracted ${extractedFiles.length} files. Skipped ${skippedFiles.length} files.`;
+
+        console.log(`Extraction summary: extracted=${extractedFiles.length}, skipped=${skippedFiles.length}`);
+        if (skippedFiles.length) {
+            console.log('Skipped files:', skippedFiles);
+        }
+
+        showToast(`Extraction finished: ${extractedFiles.length} extracted, ${skippedFiles.length} skipped.`, 'success');
+
     } catch (error) {
         console.error('❌ Extraction error:', error);
         throw error;
@@ -556,7 +832,7 @@ async function validatePasswordWithZipJs(entries, password) {
 // Utility Functions
 // ========================================
 function validateExtractButton() {
-    const hasFile = !!AppState.selectedFile;
+    const hasFile = !!(AppState.selectedFiles && AppState.selectedFiles.length > 0);
     const hasPassword = !!DOM.zipPassword?.value?.trim();
     
     DOM.extractBtn.disabled = !hasFile || !hasPassword;
@@ -614,6 +890,15 @@ function useAiDetectedPassword() {
     const detectedPassword = document.getElementById('detectedPassword').value;
     DOM.zipPassword.value = detectedPassword;
     validateExtractButton();
+    // If apply-to-checked is enabled, propagate the detected password to per-file inputs
+    if (DOM.applyToChecked && DOM.applyToChecked.checked && AppState.selectedFiles) {
+        AppState.perFilePasswords = AppState.perFilePasswords || AppState.selectedFiles.map(() => '');
+        AppState.selectedFiles.forEach((f, idx) => {
+            if (AppState.selectedFilesEnabled?.[idx]) AppState.perFilePasswords[idx] = detectedPassword;
+        });
+        renderSelectedFilesList(AppState.selectedFiles);
+    }
+
     showToast('Password copied to input field', 'success');
 }
 
